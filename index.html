@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Check Spend AR</title>
+
+  <style>
+    html,body {
+      margin:0;
+      width:100%;
+      height:100%;
+      overflow:hidden;
+      background:#000;
+      font-family:Arial,sans-serif;
+    }
+
+    #start {
+      position:fixed;
+      z-index:10;
+      left:50%;
+      bottom:35px;
+      transform:translateX(-50%);
+      padding:16px 30px;
+      border:0;
+      border-radius:30px;
+      font-size:18px;
+      font-weight:bold;
+      background:white;
+      color:black;
+    }
+
+    #message {
+      position:fixed;
+      z-index:10;
+      top:25px;
+      left:50%;
+      transform:translateX(-50%);
+      width:90%;
+      text-align:center;
+      color:white;
+      font-size:16px;
+      text-shadow:0 2px 8px black;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="message">Ready to start AR</div>
+
+<button id="start">START AR</button>
+
+<script type="module">
+
+import * as THREE from
+"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
+
+import { FontLoader } from
+"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/FontLoader.js";
+
+import { TextGeometry } from
+"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/geometries/TextGeometry.js";
+
+
+const message = document.getElementById("message");
+const button = document.getElementById("start");
+
+let scene;
+let camera;
+let renderer;
+let controller;
+
+let hitTestSource = null;
+let hitTestSourceRequested = false;
+
+let reticle;
+let textObject = null;
+let font = null;
+
+
+// LOAD FONT
+const loader = new FontLoader();
+
+loader.load(
+  "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/fonts/helvetiker_bold.typeface.json",
+  function(f) {
+    font = f;
+  }
+);
+
+
+// START AR
+button.onclick = async function() {
+
+  if (!navigator.xr) {
+    message.innerText =
+      "❌ WebXR is not available in this browser.";
+    return;
+  }
+
+  try {
+
+    const supported =
+      await navigator.xr.isSessionSupported("immersive-ar");
+
+    if (!supported) {
+      message.innerText =
+        "❌ This phone/browser does not support WebAR.";
+      return;
+    }
+
+    startAR();
+
+  } catch(error) {
+
+    console.error(error);
+
+    message.innerText =
+      "❌ AR could not start.";
+
+  }
+
+};
+
+
+async function startAR() {
+
+  scene = new THREE.Scene();
+
+  camera = new THREE.PerspectiveCamera(
+    70,
+    window.innerWidth / window.innerHeight,
+    0.01,
+    20
+  );
+
+
+  renderer = new THREE.WebGLRenderer({
+    antialias:true,
+    alpha:true
+  });
+
+  renderer.setPixelRatio(
+    window.devicePixelRatio
+  );
+
+  renderer.setSize(
+    window.innerWidth,
+    window.innerHeight
+  );
+
+  renderer.xr.enabled = true;
+
+  document.body.appendChild(
+    renderer.domElement
+  );
+
+
+  // LIGHT
+  const light =
+    new THREE.HemisphereLight(
+      0xffffff,
+      0xbbbbbb,
+      3
+    );
+
+  scene.add(light);
+
+
+  // RETICLE
+  const ring =
+    new THREE.RingGeometry(
+      0.06,
+      0.08,
+      32
+    );
+
+  const ringMaterial =
+    new THREE.MeshBasicMaterial({
+      color:0xffffff
+    });
+
+  reticle =
+    new THREE.Mesh(
+      ring,
+      ringMaterial
+    );
+
+  reticle.rotation.x =
+    -Math.PI / 2;
+
+  reticle.matrixAutoUpdate =
+    false;
+
+  reticle.visible = false;
+
+  scene.add(reticle);
+
+
+  // CONTROLLER
+  controller =
+    renderer.xr.getController(0);
+
+  controller.addEventListener(
+    "select",
+    placeText
+  );
+
+  scene.add(controller);
+
+
+  // REQUEST AR SESSION
+  const session =
+    await navigator.xr.requestSession(
+      "immersive-ar",
+      {
+        requiredFeatures:[
+          "hit-test"
+        ]
+      }
+    );
+
+
+  renderer.xr.setSession(session);
+
+
+  message.innerText =
+    "Move your phone around to find a surface.";
+
+  button.style.display =
+    "none";
+
+
+  session.addEventListener(
+    "end",
+    function() {
+
+      button.style.display =
+        "block";
+
+      message.innerText =
+        "AR ended.";
+
+    }
+  );
+
+
+  renderer.setAnimationLoop(
+    render
+  );
+
+}
+
+
+function placeText() {
+
+  if (
+    !reticle ||
+    !reticle.visible ||
+    textObject ||
+    !font
+  ) return;
+
+
+  const geometry =
+    new TextGeometry(
+      "CHECK SPEND",
+      {
+        font:font,
+        size:0.18,
+        depth:0.06,
+        curveSegments:12,
+        bevelEnabled:true,
+        bevelThickness:0.012,
+        bevelSize:0.008,
+        bevelSegments:4
+      }
+    );
+
+
+  geometry.computeBoundingBox();
+
+
+  const width =
+    geometry.boundingBox.max.x -
+    geometry.boundingBox.min.x;
+
+
+  geometry.translate(
+    -width / 2,
+    0,
+    0
+  );
+
+
+  const material =
+    new THREE.MeshStandardMaterial({
+      color:0xffffff,
+      metalness:0.3,
+      roughness:0.25
+    });
+
+
+  textObject =
+    new THREE.Mesh(
+      geometry,
+      material
+    );
+
+
+  textObject.matrixAutoUpdate =
+    false;
+
+
+  textObject.matrix.copy(
+    reticle.matrix
+  );
+
+
+  scene.add(
+    textObject
+  );
+
+
+  message.innerText =
+    "3D text placed! Walk around it.";
+}
+
+
+function render(
+  timestamp,
+  frame
+) {
+
+  if (frame) {
+
+    const session =
+      renderer.xr.getSession();
+
+    const referenceSpace =
+      renderer.xr.getReferenceSpace();
+
+
+    if (!hitTestSourceRequested) {
+
+      session.requestReferenceSpace(
+        "viewer"
+      ).then(
+        function(viewerSpace) {
+
+          session.requestHitTestSource({
+            space:viewerSpace
+          }).then(
+            function(source) {
+
+              hitTestSource =
+                source;
+
+            }
+          );
+
+        }
+      );
+
+
+      hitTestSourceRequested =
+        true;
+    }
+
+
+    if (hitTestSource) {
+
+      const results =
+        frame.getHitTestResults(
+          hitTestSource
+        );
+
+
+      if (results.length > 0) {
+
+        const hit =
+          results[0];
+
+
+        const pose =
+          hit.getPose(
+            referenceSpace
+          );
+
+
+        if (pose) {
+
+          reticle.visible =
+            !textObject;
+
+          reticle.matrix.fromArray(
+            pose.transform.matrix
+          );
+
+
+          if (!textObject) {
+
+            message.innerText =
+              "Surface found! Tap the screen to place the 3D text.";
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+
+  renderer.render(
+    scene,
+    camera
+  );
+
+}
+
+
+window.addEventListener(
+  "resize",
+  function() {
+
+    if (!camera || !renderer)
+      return;
+
+    camera.aspect =
+      window.innerWidth /
+      window.innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+      window.innerWidth,
+      window.innerHeight
+    );
+
+  }
+);
+
+</script>
+
+</body>
+</html>
